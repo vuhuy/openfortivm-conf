@@ -1,0 +1,6 @@
+/*.sh
+*.tar.gz
+setup-openfortivm
+setup-openfortivm-interfaces
+setup-openfortivm-user
+vpn-menu

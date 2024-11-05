@@ -1,0 +1,213 @@
+#!/bin/sh
+
+PROGRAM=vpn-menu
+VERSION=@VERSION@
+
+print_profiles() {
+	printf "  %2d) %s\n" "1" "Default profile"
+	counter=2
+
+	for profile_filename in $HOME/.openfortivpn.*.profile; do
+		profile=$(basename "${profile_filename}" | sed 's/.openfortivpn\.//' | sed 's/\.profile//')
+
+		if [ "${profile}" = "default" ]; then
+			continue
+		fi
+
+		printf "  %2d) %s\n" "${counter}" "$(echo "${profile}" | sed 's/_/ /g')"
+		profiles="${profiles} ${profile}"
+		counter=$((counter + 1))
+	done
+}
+
+touch_default_profile() {
+	if [ ! -f "$HOME/.openfortivpn.default.profile" ]; then
+		cat << EOF > "$HOME/.openfortivpn.default.profile"
+#host = sslvpn.example.com
+#port = 443
+#username = john.doe
+
+# Enable to advertising VPN DNS and routes via DHCP on eth1
+#dhcpd-ifname = eth1
+EOF
+	fi
+}
+
+verbosity="off"
+verbosity_param=""
+
+while true; do
+	clear
+	echo "-------------------------"
+	echo " Welcome to openfortivm! "
+	echo "-------------------------"
+	echo
+	echo "What would you like to do?"
+	echo
+	echo "   1) Connect to VPN (default profile)"
+	echo "   2) Connect to VPN (select profile)"
+	echo "   3) Manage connection profiles"
+	echo
+	echo "   4) Toggle verbosity (currently ${verbosity})"
+	echo "   5) Quit to shell"
+	echo
+	echo -n "Enter choice: "
+	read -r choice
+
+	# The `set -- $profiles` while loop doesn't play nice with `case`.
+	if [ "${choice}" = "1" ]; then
+		touch_default_profile
+
+		echo
+		doas openfortivpn${verbosity_param} -c "$HOME/.openfortivpn.default.profile"
+		echo
+		echo "VPN connection closed."
+		echo -n "Press any key to return to the main menu..."
+		read -n 1 -r
+	elif [ "${choice}" = "2" ]; then
+		while true; do
+			profiles="default"
+			touch_default_profile
+
+			clear
+			echo "---------------------------------"
+			echo " Connect to VPN (select profile) "
+			echo "---------------------------------"
+			echo
+			echo "Select a VPN connection profile:"
+			echo
+
+			print_profiles
+
+			echo
+			echo "   b) Back to main menu"
+			echo
+			echo -n "Connect to profile: "
+			read -r profile_choice
+
+			if [ "${profile_choice}" = "b" ]; then
+				break
+			fi
+
+			counter=1
+			to_main_menu=0
+			set -- $profiles
+
+			while [ -n "$1" ]; do
+				if [ "${profile_choice}" = "${counter}" ]; then
+					echo
+					doas openfortivpn${verbosity_param} -c "$HOME/.openfortivpn.$1.profile"
+					echo
+					echo "VPN connection closed."
+					echo -n "Press any key to return to the main menu..."
+					read -n 1 -r
+
+					to_main_menu=1
+					break
+				fi
+
+				counter=$((counter + 1))
+				shift
+			done
+
+			if [ "${to_main_menu}" = 1 ]; then
+				break
+			fi
+		done
+	elif [ "${choice}" = "3" ]; then
+		while true; do
+			profiles="default"
+			touch_default_profile
+
+			clear
+			echo "-----------------"
+			echo " Manage profiles "
+			echo "-----------------"
+			echo
+			echo "Select a VPN connection profile:"
+			echo
+
+			print_profiles
+
+			echo
+			echo "   n) Create new profile"
+			echo "   b) Back to main menu"
+			echo
+			echo -n "Edit profile: "
+			read -r manage_choice
+
+			if [ "${manage_choice}" = "b" ]; then
+				break
+			elif [ "${manage_choice}" = "n" ]; then
+				while true; do
+					echo -n "Enter new profile name: "
+					read -r profile_name
+
+					profile_name="$(echo "${profile_name}" | sed 's/^ *//; s/ *$//')"
+
+					if [ -z "${profile_name}" ]; then
+						break
+					elif ! echo "${profile_name}" | grep -Eq '^[a-zA-Z0-9 -]{1,32}$'; then
+						echo "Invalid profile name (alphanumeric, spaces, dashes, max. 32 chars)."
+					else
+						profile="$(echo "${profile_name}" | sed 's/ /_/g')"
+
+						if [ ! -f "$HOME/.openfortivpn.${profile}.profile" ]; then
+cat << EOF > "$HOME/.openfortivpn.${profile}.profile"
+#host = sslvpn.example.com
+#port = 443
+#username = john.doe
+
+# Enable to advertising VPN DNS and routes via DHCP on eth1
+#dhcpd-ifname = eth1
+EOF
+						fi
+
+						vi "$HOME/.openfortivpn.${profile}.profile"
+
+						if [ ! -s "$HOME/.openfortivpn.${profile}.profile" ] || ! grep -q '[^[:space:]]' "$HOME/.openfortivpn.${profile}.profile"; then
+							rm "$HOME/.openfortivpn.${profile}.profile"
+						fi
+
+						break
+					fi
+				done
+				continue
+			fi
+
+			counter=1
+			set -- $profiles
+
+			while [ -n "$1" ]; do
+
+				if [ "${manage_choice}" = "${counter}" ]; then
+					vi "$HOME/.openfortivpn.$1.profile"
+
+					if [ ! -s "$HOME/.openfortivpn.$1.profile" ] || ! grep -q '[^[:space:]]' "$HOME/.openfortivpn.$1.profile"; then
+						rm "$HOME/.openfortivpn.$1.profile"
+					fi
+
+					break
+				fi
+
+				counter=$((counter + 1))
+				shift
+			done
+		done
+	elif [ "${choice}" = "4" ]; then
+		if [ "${verbosity}" = "off" ]; then
+			verbosity="on"
+			verbosity_param=" -v"
+		else
+			verbosity="off"
+			verbosity_param=""
+		fi
+	elif [ "${choice}" = "5" ]; then
+		echo
+		echo "Run 'vpn-menu' to return back to this menu."
+		echo -n "Press any key to continue..."
+		read -n 1 -r
+
+		break
+	fi
+done
