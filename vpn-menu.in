@@ -33,6 +33,34 @@ EOF
 	fi
 }
 
+if ! ip addr show eth0 | grep -q 'inet ' || ! ip addr show eth1 | grep -q 'inet '; then
+	clear
+	echo "-------"
+	echo " Error "
+	echo "-------"
+	echo
+	echo "Openfortivm requires two configured network interfaces."
+	echo
+	echo "  eth0: Virtual network adapter (NAT or bridged)"
+	echo "        This interface is used to access the VPN server/internet. Set"
+	echo "        to DHCP when using NAT."
+	echo "  eth1: Virtual network adapter \(private network without DHCP\)"
+	echo "        Configure a static IP using an unused subnet, e.g. X.X.X.1. Do"
+	echo "        not auto\(matically\) enable the interface on boot. This is"
+	echo "        controlled from openfortivpn. Openfortivm can route traffic"
+	echo "        between the VPN and clients connected to this private network."
+	echo "        It can also serve as DHCP server to advertise the VPN routes"
+	echo "        and DNS nameserver \(when enabled\)."
+	echo
+	echo "Configure the network interfaces accordingly by running the command"
+	echo "'setup-openfortivm-interfaces' and reboot when done."
+	echo
+	echo -n "Press any key to continue..."
+	read -n 1 -r
+	clear
+	exit 1
+fi
+
 verbosity="off"
 verbosity_param=""
 
@@ -203,11 +231,8 @@ EOF
 			verbosity_param=""
 		fi
 	elif [ "${choice}" = "5" ]; then
-		echo
-		echo "Run 'vpn-menu' to return back to this menu."
-		echo -n "Press any key to continue..."
-		read -n 1 -r
-
 		break
 	fi
 done
+
+clear
