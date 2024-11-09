@@ -42,15 +42,14 @@ if ! ip addr show eth0 | grep -q 'inet ' || ! ip addr show eth1 | grep -q 'inet 
 	echo "Openfortivm requires two configured network interfaces."
 	echo
 	echo "  eth0: Virtual network adapter (NAT or bridged)"
-	echo "        This interface is used to access the VPN server/internet. Set"
-	echo "        to DHCP when using NAT."
-	echo "  eth1: Virtual network adapter \(private network without DHCP\)"
-	echo "        Configure a static IP using an unused subnet, e.g. X.X.X.1. Do"
-	echo "        not auto\(matically\) enable the interface on boot. This is"
-	echo "        controlled from openfortivpn. Openfortivm can route traffic"
-	echo "        between the VPN and clients connected to this private network."
-	echo "        It can also serve as DHCP server to advertise the VPN routes"
-	echo "        and DNS nameserver \(when enabled\)."
+	echo "        This interface is used to access the VPN server/internet. Set" to DHCP
+	echo "        when using NAT."
+	echo "  eth1: Virtual network adapter (private network without DHCP)"
+	echo "        Configure a static IP using an unused subnet, e.g. X.X.X.1. Do not"
+	echo "        auto(matically) enable the interface on boot. This is controlled from"
+	echo "        openfortivpn. Openfortivm can route traffic between the VPN and clients"
+	echo "        connected to this private network. It can also serve as DHCP server to"
+	echo "        advertise the VPN routes and DNS nameserver (when enabled)."
 	echo
 	echo "Configure the network interfaces accordingly by running the command"
 	echo "'setup-openfortivm-interfaces' and reboot when done."
@@ -64,6 +63,8 @@ fi
 verbosity="off"
 verbosity_param=""
 
+rm -f /tmp/openfortivm.connection > /dev/null 2>&1
+
 while true; do
 	clear
 	echo "-------------------------"
@@ -72,12 +73,13 @@ while true; do
 	echo
 	echo "What would you like to do?"
 	echo
-	echo "   1) Connect to VPN (default profile)"
-	echo "   2) Connect to VPN (select profile)"
-	echo "   3) Manage connection profiles"
+	echo "   1) Connect to VPN with default profile"
+	echo "   2) Manage connection profiles"
 	echo
-	echo "   4) Toggle verbosity (currently ${verbosity})"
-	echo "   5) Quit to shell"
+	echo "   v) Toggle verbosity (currently ${verbosity})"
+	echo "   q) Quit to shell"
+	echo "   r) Reboot openfortivm"
+	echo "   s) Shutdown openfortivm"
 	echo
 	echo -n "Enter choice: "
 	read -r choice
@@ -85,9 +87,14 @@ while true; do
 	# The `set -- $profiles` while loop doesn't play nice with `case`.
 	if [ "${choice}" = "1" ]; then
 		touch_default_profile
-
+		cp "$HOME/.openfortivpn.default.profile" "$HOME/.openfortivpn.default.profile.tmp" > /dev/null 2>&1
+		sed -i '/^(host\|port\|username\|realm\|dhcpd-ifname\|saml-url)/!d' "$HOME/.openfortivpn.default.profile.tmp" > /dev/null 2>&1
+		mv "$HOME/.openfortivpn.default.profile.tmp" "/tmp/openfortivm.connection" > /dev/null 2>&1
 		echo
 		doas openfortivpn${verbosity_param} -c "$HOME/.openfortivpn.default.profile"
+
+		rm -f /tmp/openfortivm.connection > /dev/null 2>&1
+
 		echo
 		echo "VPN connection closed."
 		echo -n "Press any key to return to the main menu..."
@@ -98,61 +105,11 @@ while true; do
 			touch_default_profile
 
 			clear
-			echo "---------------------------------"
-			echo " Connect to VPN (select profile) "
-			echo "---------------------------------"
+			echo "----------------------------"
+			echo " Manage connection profiles "
+			echo "----------------------------"
 			echo
-			echo "Select a VPN connection profile:"
-			echo
-
-			print_profiles
-
-			echo
-			echo "   b) Back to main menu"
-			echo
-			echo -n "Connect to profile: "
-			read -r profile_choice
-
-			if [ "${profile_choice}" = "b" ]; then
-				break
-			fi
-
-			counter=1
-			to_main_menu=0
-			set -- $profiles
-
-			while [ -n "$1" ]; do
-				if [ "${profile_choice}" = "${counter}" ]; then
-					echo
-					doas openfortivpn${verbosity_param} -c "$HOME/.openfortivpn.$1.profile"
-					echo
-					echo "VPN connection closed."
-					echo -n "Press any key to return to the main menu..."
-					read -n 1 -r
-
-					to_main_menu=1
-					break
-				fi
-
-				counter=$((counter + 1))
-				shift
-			done
-
-			if [ "${to_main_menu}" = 1 ]; then
-				break
-			fi
-		done
-	elif [ "${choice}" = "3" ]; then
-		while true; do
-			profiles="default"
-			touch_default_profile
-
-			clear
-			echo "-----------------"
-			echo " Manage profiles "
-			echo "-----------------"
-			echo
-			echo "Select a VPN connection profile:"
+			echo "Select a connection profile:"
 			echo
 
 			print_profiles
@@ -161,12 +118,17 @@ while true; do
 			echo "   n) Create new profile"
 			echo "   b) Back to main menu"
 			echo
-			echo -n "Edit profile: "
+			echo "Enter profile number to connect with the selected profile. Add a modifier to"
+			echo "(e)dit, (d)elete, or (m)ake a profile default (e.g. '1e')."
+			echo
+			echo -n "Enter choice: "
 			read -r manage_choice
 
 			if [ "${manage_choice}" = "b" ]; then
 				break
-			elif [ "${manage_choice}" = "n" ]; then
+			fi
+
+			if [ "${manage_choice}" = "n" ]; then
 				while true; do
 					echo -n "Enter new profile name: "
 					read -r profile_name
@@ -203,26 +165,95 @@ EOF
 				continue
 			fi
 
-			counter=1
-			set -- $profiles
+			if echo "${manage_choice}" | grep -E -o '^[1-9][0-9]*$'; then
+				to_main_menu=0
+				counter=1
+				set -- $profiles
 
-			while [ -n "$1" ]; do
+				while [ -n "$1" ]; do
+					if [ "${manage_choice}" = "${counter}" ]; then
+						cp "$HOME/.openfortivpn.$1.profile" "$HOME/.openfortivpn.$1.profile.tmp" > /dev/null 2>&1
+						sed -i '/^(host\|port\|username\|realm\|dhcpd-ifname\saml-url)/!d' "$HOME/.openfortivpn.$1.profile.tmp" > /dev/null 2>&1
+						mv "$HOME/.openfortivpn.$1.profile.tmp" "/tmp/openfortivm.connection" > /dev/null 2>&1
 
-				if [ "${manage_choice}" = "${counter}" ]; then
-					vi "$HOME/.openfortivpn.$1.profile"
+						echo
+						doas openfortivpn${verbosity_param} -c "$HOME/.openfortivpn.$1.profile"
 
-					if [ ! -s "$HOME/.openfortivpn.$1.profile" ] || ! grep -q '[^[:space:]]' "$HOME/.openfortivpn.$1.profile"; then
-						rm "$HOME/.openfortivpn.$1.profile"
+						rm -f /tmp/openfortivm.connection > /dev/null 2>&1
+
+						echo
+						echo "VPN connection closed."
+						echo -n "Press any key to return to the main menu..."
+						read -n 1 -r
+
+						to_main_menu=1
+						break
 					fi
 
+					counter=$((counter + 1))
+					shift
+				done
+
+				if [ "${to_main_menu}" = 1 ]; then
 					break
 				fi
+			fi
 
-				counter=$((counter + 1))
-				shift
-			done
+			if echo "${manage_choice}" | grep -E -o '^[1-9][0-9]*[edm]$'; then
+				number=$(echo "${manage_choice}" | grep -E -o '^[1-9][0-9]*')
+				letter=$(echo "${manage_choice}" | grep -E -o '[edm]$')
+				counter=1
+
+				set -- $profiles
+
+				while [ -n "$1" ]; do
+					if [ "${number}" = "${counter}" ]; then
+						if [ "${letter}" = "e" ]; then
+							vi "$HOME/.openfortivpn.$1.profile"
+
+							if [ ! -s "$HOME/.openfortivpn.$1.profile" ] || ! grep -q '[^[:space:]]' "$HOME/.openfortivpn.$1.profile"; then
+								rm "$HOME/.openfortivpn.$1.profile"
+							fi
+						elif [ "${letter}" = "d" ]; then
+							clear
+							echo "---------"
+							echo " Warning "
+							echo "---------"
+							echo
+							echo "Profile '$(echo "$1" | sed 's/_/ /g')' will be deleted."
+							echo
+							echo -n "Are you sure? (y/n) "
+							read -r delete_choice
+
+							if [ "${delete_choice}" = "y" ]; then
+								rm -f "$HOME/.openfortivpn.$1.profile"
+							fi
+						elif [ "${letter}" = "m" ]; then
+							clear
+							echo "---------"
+							echo " Warning "
+							echo "---------"
+							echo
+							echo "This will overwrite the default profile with a copy of the selected profile"
+							echo "'$(echo "$1" | sed 's/_/ /g')'."
+							echo
+							echo -n "Are you sure? (y/n) "
+							read -r default_choice
+
+							if [ "${default_choice}" = "y" ]; then
+								cp "$HOME/.openfortivpn.$1.profile" "$HOME/.openfortivpn.default.profile"
+							fi
+						fi
+
+						break
+					fi
+
+					counter=$((counter + 1))
+					shift
+				done
+			fi
 		done
-	elif [ "${choice}" = "4" ]; then
+	elif [ "${choice}" = "v" ]; then
 		if [ "${verbosity}" = "off" ]; then
 			verbosity="on"
 			verbosity_param=" -v"
@@ -230,7 +261,40 @@ EOF
 			verbosity="off"
 			verbosity_param=""
 		fi
-	elif [ "${choice}" = "5" ]; then
+	elif [ "${choice}" = "r" ]; then
+		clear
+		echo "--------"
+		echo " Reboot "
+		echo "--------"
+		echo
+		echo -n "Reboot openfortivm? (y/n) "
+		read -r reboot_choice
+
+		if [ "${reboot_choice}" = "y" ]; then
+			doas reboot
+			break
+		fi
+	elif [ "${choice}" = "s" ]; then
+		clear
+		echo "----------"
+		echo " Shutdown "
+		echo "----------"
+		echo
+		echo -n "Shutdown openfortivm? (y/n) "
+		read -r shutdown_choice
+
+		if [ "${shutdown_choice}" = "y" ]; then
+			doas poweroff
+			break
+		fi
+	elif [ "${choice}" = "q" ]; then
+		clear
+		echo "---------------"
+		echo " Quit to shell "
+		echo "---------------"
+		echo
+		echo -n "Run 'vpn-menu' to return anytime. Bye!"
+		read -n 1 -r
 		break
 	fi
 done

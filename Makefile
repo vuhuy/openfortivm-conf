@@ -36,7 +36,7 @@ apk:	$(APKF)
 
 install: $(BIN_FILES) $(SBIN_FILES)
 	install -m 755 -d $(DESTDIR)/$(PREFIX)/bin
-	install -m 755 $(BIN_FILES) $(DESTDIR)$(PREFIX)/bin
+	install -m 755 $(BIN_FILES) $(DESTDIR)/$(PREFIX)/bin
 	install -m 755 -d $(DESTDIR)/$(PREFIX)/sbin
 	install -m 755 $(SBIN_FILES) $(DESTDIR)/$(PREFIX)/sbin
 
